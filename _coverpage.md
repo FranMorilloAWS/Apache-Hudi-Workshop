@@ -1,6 +1,6 @@
 ![logo](_media/logo256.png)
 
-# Incremental Data Lakes: Apache Hudi On AWS Glue Workshop <small>0.1</small>
+# Incremental Data Lakes: Apache Hudi with AWS Glue Workshop <small>0.1</small>
 
 > Building an Apache Hudi Data Lake on Amazon S3 with AWS Glue.
 
