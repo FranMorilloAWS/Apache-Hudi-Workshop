@@ -32,5 +32,11 @@
   - [Merge on Read](5-writing-apache-hudi/2-merge-on-read.md)
 
 - Lab 4: Querying Apache Hudi
-
+  - [Snapshot Queries](6-querying-apache-hudi/1-snapshot.md)
+  - [Incremental Queries](6-querying-apache-hudi/2-incremental.md)
+  - [Time Travel Query](6-querying-apache-hudi/3-time-travel.md)
 - Lab 6: Advanced Apache Hudi Configurations
+  - [DMS Configuration](7-advanced-apache-hudi/1-dms-configuration.md)
+  - [Cleaning](7-advanced-apache-hudi/2-cleaning.md)
+  - [Clustering](7-advanced-apache-hudi/3-clustering.md)
+  - [File Sizing](7-advanced-apache-hudi/4-file-sizing.md)

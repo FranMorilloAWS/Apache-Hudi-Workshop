@@ -1,0 +1,719 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "This CloudFormation sample template DMSAuroraToS3FullLoadAndOngoingReplication creates an Aurora RDS instance and DMS instance in a VPC, and a S3 bucket. The Aurora RDS instance is configured as the DMS Source Endpoint and the S3 bucket is configured as the DMS Target Endpoint. A DMS task is created and configured to migrate existing data and replicate ongoing changes from the source endpoint to the target endpoint. You will be billed for the AWS resources used if you create a stack from this template.",
+  "Parameters": {
+    "LatestAmiId": {
+      "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+      "Default": "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+    }
+  },
+  "Resources" : {
+
+    "VPC" : {
+      "Type" : "AWS::EC2::VPC",
+      "Properties" : {
+        "CidrBlock" : "10.0.0.0/24",
+        "EnableDnsSupport" : "true",
+        "EnableDnsHostnames" : "true",
+        "Tags" : [ 
+          { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}},
+          { "Key" : "Name", "Value" : { "Ref" : "AWS::StackName"}}
+        ]
+      }
+    },
+
+    "DBSubnet1" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "CidrBlock" : "10.0.0.0/26",
+        "AvailabilityZone" : { "Fn::Select" : [ "0", { "Fn::GetAZs" : "" } ] },
+        "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+      }
+    },
+
+    "DBSubnet2" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "CidrBlock" : "10.0.0.64/26",
+        "AvailabilityZone" : { "Fn::Select" : [ "1", { "Fn::GetAZs" : "" } ] },
+        "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+      }
+    },
+
+    "InternetGateway" : {
+      "Type" : "AWS::EC2::InternetGateway",
+      "Properties" : {
+        "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+      }
+    },
+
+    "AttachGateway" : {
+       "Type" : "AWS::EC2::VPCGatewayAttachment",
+       "Properties" : {
+         "VpcId" : { "Ref" : "VPC" },
+         "InternetGatewayId" : { "Ref" : "InternetGateway" }
+       }
+    },
+
+    "RouteTable" : {
+      "Type" : "AWS::EC2::RouteTable",
+      "Properties" : {
+        "VpcId" : {"Ref" : "VPC"},
+        "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+      }
+    },
+
+    "Route" : {
+      "Type" : "AWS::EC2::Route",
+      "Properties" : {
+        "RouteTableId" : { "Ref" : "RouteTable" },
+        "DestinationCidrBlock" : "0.0.0.0/0",
+        "GatewayId" : { "Ref" : "InternetGateway" }
+      },
+      "DependsOn" : [ "AttachGateway" ]
+    },
+
+    "SubnetRouteTableAssociation" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : { "Ref" : "DBSubnet1" },
+        "RouteTableId" : { "Ref" : "RouteTable" }
+      }
+    },
+
+    "SubnetRouteTableAssociation1" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : { "Ref" : "DBSubnet2" },
+        "RouteTableId" : { "Ref" : "RouteTable" }
+      }
+    },
+
+    "AuroraDBSubnetGroup" : {
+      "Type" : "AWS::RDS::DBSubnetGroup",
+      "Properties" : {
+        "DBSubnetGroupDescription" : "Subnets available for the Aurora SampleDB DB Instance",
+        "SubnetIds" : [ { "Ref" : "DBSubnet1" }, { "Ref" : "DBSubnet2" } ]
+      }
+    },
+
+    "AuroraSecurityGroup" : {
+        "Type" : "AWS::EC2::SecurityGroup",
+        "Properties" :
+        {
+           "GroupDescription" : "Security group for Aurora SampleDB DB Instance",
+           "GroupName" : "Aurora SampleDB Security Group",
+           "VpcId" : { "Ref" : "VPC" },
+
+        "SecurityGroupIngress" : [
+          {
+            "IpProtocol" : "tcp",
+            "FromPort" : "5432",
+            "ToPort" : "5432",
+            "CidrIp" : "10.0.0.0/24"
+          }
+        ]
+      }
+    },
+    "AuroraSGIngressRule": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": 
+      {
+        "Description": "Ingress Rule for own SG",
+        "GroupId": {"Ref": "AuroraSecurityGroup"},
+        "IpProtocol" : "tcp",
+        "FromPort" : "5432",
+        "ToPort" : "5432",
+        "SourceSecurityGroupId" : {"Ref": "AuroraSecurityGroup"}
+      }
+    },
+    "AuroraClusterParameterGroup" : {
+      "Type" : "AWS::RDS::DBClusterParameterGroup",
+      "Properties" : {
+        "Description" : "Enables bin_log prerequisites",
+        "Family" : "aurora-postgresql13",
+        "Parameters" : {
+          "rds.logical_replication": "1",
+          "wal_sender_timeout": "0",
+          "max_wal_senders": "20",
+          "max_replication_slots": "50"
+        }
+      }
+    },
+
+    "AuroraCluster" : {
+      "Type" : "AWS::RDS::DBCluster",
+      "DeletionPolicy": "Delete",
+      "Properties" : {
+        "DatabaseName" : "sportstickets",
+        "MasterUsername": "dbmaster",
+        "MasterUserPassword": "password",
+        "DBClusterParameterGroupName" : { "Ref" : "AuroraClusterParameterGroup" },
+        "DBSubnetGroupName" : { "Ref" : "AuroraDBSubnetGroup" },
+        "Engine" : "aurora-postgresql",
+        "Port": "5432",
+        "VpcSecurityGroupIds"  : [ { "Ref" : "AuroraSecurityGroup" } ]
+      }
+    },
+
+    "AuroraDB" : {
+      "Type" : "AWS::RDS::DBInstance",
+      "Properties" : {
+      	"DBClusterIdentifier" : { "Ref" : "AuroraCluster" },
+        "DBInstanceClass" : "db.r5.large",
+        "DBInstanceIdentifier" : {"Fn::Join": ["",["dms-sample-",{ "Ref" : "AWS::StackName"}]]},
+        "DBSubnetGroupName" : { "Ref" : "AuroraDBSubnetGroup" },
+        "Engine" : "aurora-postgresql",
+        "MultiAZ" : "false",
+        "PubliclyAccessible" : "true",
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+      },
+      "DependsOn" : [ "AuroraCluster" ]
+    },
+    "EC2WorkshopRole" : {
+      "Type" : "AWS::IAM::Role",
+      "Properties" : {
+        "AssumeRolePolicyDocument": {
+          "Version" : "2012-10-17",
+          "Statement" : [ {
+            "Effect" : "Allow",
+            "Principal" : {
+                "Service" : [ "ec2.amazonaws.com" ]
+            },
+            "Action" : [ "sts:AssumeRole" ]
+          } ]
+        },
+        "Path" : "/",
+        "Policies" : [ {
+          "PolicyName" : "EC2PolicyWorkshop",
+          "PolicyDocument" : {
+            "Version" : "2012-10-17",
+            "Statement" : [ 
+              {
+                "Effect" : "Allow",
+                "Action" : [
+                  "s3:*",
+                  "ec2:*"
+                ],
+                "Resource" : "*"
+              }
+            ]
+          }
+        } ]
+      }
+    },
+    "Ec2InstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "InstanceProfileName": { "Fn::Join" : [ "", [ {"Ref":"AWS::StackName"},"-Ec2InstanceProfile"]]},
+        "Path": "/",
+        "Roles": [{"Ref":"EC2WorkshopRole" }]
+      },
+      "DependsOn": ["EC2WorkshopRole"]
+    },
+    "DMSLabInstance" : {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+         "ImageId" : {"Ref":"LatestAmiId"},
+         "DisableApiTermination" : "false",
+         "InstanceInitiatedShutdownBehavior" : "stop",
+         "EbsOptimized": "true",
+         "InstanceType": "t3.2xlarge",
+         "IamInstanceProfile": {"Ref":"Ec2InstanceProfile"},
+         "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+          "#!/bin/bash -xe\n",
+          "yum install -y postgresql\n",
+          "yum install -y git\n",
+          "yum update -y\n",
+          "cd /home/ec2-user\n",
+          "mkdir hudi-jars\n",
+          "cd hudi-jars\n",
+          "wget https://repo1.maven.org/maven2/org/apache/hudi/hudi-spark3-bundle_2.12/0.9.0/hudi-spark3-bundle_2.12-0.9.0.jar\n",
+          "wget https://repo1.maven.org/maven2/org/apache/spark/spark-avro_2.12/3.1.1/spark-avro_2.12-3.1.1.jar\n",
+          "wget https://repo1.maven.org/maven2/org/apache/httpcomponents/httpclient/4.5.9/httpclient-4.5.9.jar\n",
+          "wget https://repo1.maven.org/maven2/org/apache/httpcomponents/httpcore/4.4.11/httpcore-4.4.11.jar\n",
+          "wget https://repo1.maven.org/maven2/org/apache/calcite/calcite-core/1.16.0/calcite-core-1.16.0.jar\n",
+          "aws s3 cp . s3://",{"Ref":"S3Bucket"},"/hudi-jars/ --recursive\n",
+          "cd /home/ec2-user\n",
+          "git clone https://github.com/aws-samples/aws-database-migration-samples.git\n",
+          "cd aws-database-migration-samples/PostgreSQL/sampledb/v1/\n",
+          "export ENDPOINT=","'",{ "Fn::GetAtt" : [ "AuroraCluster", "Endpoint.Address" ] },"'","\n",
+          "export PGPASSWORD='password'\n",
+          "psql --host=$ENDPOINT --port=5432 --username=dbmaster --dbname=sportstickets -f install-postgresql.sql\n",
+          "cd /home/ec2-user\n",
+          "echo 'select dms_sample.generatesportstickets('football');select dms_sample.generatesportstickets('baseball');select dms_sample.generateticketactivity(100);select dms_sample.generatetransferactivity(10);with deletes as (delete from dms_sample.ticket_purchase_hist where sporting_event_ticket_id = (select id from dms_sample.sporting_event_ticket limit 1) returning sporting_event_ticket_id as sporting_event_ticket_id) delete from dms_sample.sporting_event_ticket where id = (select sporting_event_ticket_id from deletes limit 1);' > query.sql\n",
+          {"Fn::Sub": [
+            "echo '*/30 * * * * PGPASSWORD=password psql --host=${host} --port=5432 --username=dbmaster --dbname=sportstickets -f /home/ec2-user/query.sql' > crontab.txt\n",
+            {"host": { "Fn::GetAtt" : [ "AuroraCluster", "Endpoint.Address" ] }}
+          ]},
+          "systemctl start crond\n",
+          "systemctl enable crond\n",
+          "crontab crontab.txt\n",
+          "echo FINISHED\n"
+     ]]}},
+     "Monitoring": "false",
+     "NetworkInterfaces": [{
+       "DeleteOnTermination": "true",
+       "Description": "Primary network interface",
+       "DeviceIndex": "0",
+       "SubnetId": {"Ref": "DBSubnet1"},
+       "GroupSet":[{"Ref": "AuroraSecurityGroup" }],
+       "AssociatePublicIpAddress": "true"
+     }]
+   },
+   "DependsOn" : [ "AuroraDB","AuroraSecurityGroup","AuroraCluster", "Ec2InstanceProfile" ]
+
+      },
+    "S3Bucket" : {
+      "Type" : "AWS::S3::Bucket",
+      "Properties" : {
+        "AccessControl" : "Private" 
+      }
+    },
+    "S3HudiBucket" : {
+      "Type" : "AWS::S3::Bucket",
+      "Properties" : {
+        "AccessControl" : "Private" 
+      }
+    },
+
+    "DMSCloudwatchRole" : {
+      "Type" : "AWS::IAM::Role",
+      "Properties" : {
+        "RoleName" : { "Fn::Join" : [ "", [ {"Ref":"AWS::StackName"},"-dms-cloudwatch-logs-role"]]},
+        "AssumeRolePolicyDocument": {
+          "Version" : "2012-10-17",
+          "Statement" : [ {
+            "Effect" : "Allow",
+            "Principal" : {
+                "Service" : [ "dms.amazonaws.com" ]
+            },
+            "Action" : [ "sts:AssumeRole" ]
+          } ]
+        },
+        "ManagedPolicyArns" : [ "arn:aws:iam::aws:policy/service-role/AmazonDMSCloudWatchLogsRole" ],
+        "Path" : "/"
+      }
+    },
+
+    "DMSVpcRole" : {
+      "Type" : "AWS::IAM::Role",
+      "Properties" : {
+        "RoleName" : "dms-vpc-role",
+        "AssumeRolePolicyDocument": {
+          "Version" : "2012-10-17",
+          "Statement" : [ {
+            "Effect" : "Allow",
+            "Principal" : {
+                "Service" : [ "dms.amazonaws.com" ]
+            },
+            "Action" : [ "sts:AssumeRole" ]
+          } ]
+        },
+        "ManagedPolicyArns" : [ "arn:aws:iam::aws:policy/service-role/AmazonDMSVPCManagementRole" ],
+        "Path" : "/"
+      }
+    },
+
+    "S3TargetDMSRole" : {
+      "Type" : "AWS::IAM::Role",
+      "Properties" : {
+        "RoleName" : { "Fn::Join" : [ "", [ {"Ref":"AWS::StackName"},"-dms-s3-target-role"]]},
+        "AssumeRolePolicyDocument": {
+          "Version" : "2012-10-17",
+          "Statement" : [ {
+            "Effect" : "Allow",
+            "Principal" : {
+                "Service" : [ "dms.amazonaws.com" ]
+            },
+            "Action" : [ "sts:AssumeRole" ]
+          } ]
+        },
+        "Path" : "/",
+        "Policies" : [ {
+          "PolicyName" : "S3AccessForDMSPolicy",
+          "PolicyDocument" : {
+            "Version" : "2012-10-17",
+            "Statement" : [ 
+              {
+                "Effect" : "Allow",
+                "Action" : [
+                  "s3:PutObject",
+                  "s3:DeleteObject"
+                ],
+                "Resource" : [ 
+                  { "Fn::GetAtt" : [ "S3Bucket", "Arn" ] },
+                  { "Fn::Join" : [ "", [ { "Fn::GetAtt" : [ "S3Bucket", "Arn" ] }, "/*" ] ] }
+                ]
+              },
+              {
+                "Effect" : "Allow",
+                "Action" : "s3:ListBucket",
+                "Resource" : { "Fn::GetAtt" : [ "S3Bucket", "Arn" ] }
+              } 
+            ]
+          }
+        } ]
+      },
+      "DependsOn" : [ "S3Bucket" ]
+    },
+
+    "DMSReplicationSubnetGroup" : {
+      "Type" : "AWS::DMS::ReplicationSubnetGroup",
+      "Properties" : {
+        "ReplicationSubnetGroupDescription" : "Subnets available for DMS",
+        "SubnetIds" : [ { "Ref" : "DBSubnet1" }, { "Ref" : "DBSubnet2" } ]
+      }
+    },
+
+    "DMSReplicationInstance" : {
+      "Type" : "AWS::DMS::ReplicationInstance",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::GetAtt" : [ "DBSubnet1", "AvailabilityZone" ] },
+        "PubliclyAccessible" : false,
+        "ReplicationInstanceClass" : "dms.t3.large",
+        "ReplicationInstanceIdentifier" : {"Fn::Join": ["",["aurora-s3-repinstance-",{ "Ref" : "AWS::StackName"}]]},
+        "ReplicationSubnetGroupIdentifier" : { "Ref" : "DMSReplicationSubnetGroup" },
+        "VpcSecurityGroupIds" : [ { "Ref" : "AuroraSecurityGroup" } ]
+      },
+      "DependsOn" : [ "DMSReplicationSubnetGroup", "AuroraSecurityGroup" ]
+    },
+
+    "AuroraSourceEndpoint" : {
+      "Type" : "AWS::DMS::Endpoint",
+      "Properties" : {
+        "EndpointType" : "source",
+        "EngineName" : "aurora-postgresql",
+        "Password" : "password",
+        "Port" : 5432,
+        "ServerName" : { "Fn::GetAtt" : [ "AuroraCluster", "Endpoint.Address" ] },
+        "Username" : "dbmaster",
+        "DatabaseName": "sportstickets"
+
+      },
+      "DependsOn" : [ "DMSReplicationInstance", "AuroraCluster", "AuroraDB","DMSLabInstance" ]
+    },
+
+    "S3TargetEndpoint" : {
+      "Type" : "AWS::DMS::Endpoint",
+      "Properties" : {
+        "EndpointType" : "target",
+        "EngineName" : "S3",
+        "ExtraConnectionAttributes" :"dataFormat=parquet;timestampColumnName=timestamp",
+        "S3Settings" : {
+          "BucketName" : { "Ref" : "S3Bucket" },
+          "ServiceAccessRoleArn" : { "Fn::GetAtt" : [ "S3TargetDMSRole", "Arn" ] }
+        }
+      },
+      "DependsOn" : [ "DMSReplicationInstance", "S3Bucket", "S3TargetDMSRole" ]
+    },
+
+    "DMSReplicationTask" : {
+      "Type": "AWS::DMS::ReplicationTask",
+      "Properties": {
+        "MigrationType": "full-load-and-cdc",
+        "ReplicationInstanceArn" : { "Ref" : "DMSReplicationInstance" },
+        "ReplicationTaskSettings" : "{ \"Logging\" : { \"EnableLogging\" : true, \"LogComponents\": [ { \"Id\" : \"SOURCE_UNLOAD\", \"Severity\" : \"LOGGER_SEVERITY_DEFAULT\" }, { \"Id\" : \"SOURCE_CAPTURE\", \"Severity\" : \"LOGGER_SEVERITY_DEFAULT\" }, { \"Id\" : \"TARGET_LOAD\", \"Severity\" : \"LOGGER_SEVERITY_DEFAULT\" }, { \"Id\" : \"TARGET_APPLY\", \"Severity\" : \"LOGGER_SEVERITY_DEFAULT\" } ] } }",
+        "SourceEndpointArn" : { "Ref" : "AuroraSourceEndpoint" },
+        "TableMappings" : "{ \"rules\": [ { \"rule-type\" : \"selection\", \"rule-id\" : \"1\", \"rule-name\" : \"1\", \"object-locator\" : { \"schema-name\" : \"dms_sample\", \"table-name\" : \"%\" }, \"rule-action\" : \"include\" } ] }",
+        "TargetEndpointArn" : { "Ref" : "S3TargetEndpoint" }
+      },
+      "DependsOn" : [ "AuroraSourceEndpoint", "S3TargetEndpoint", "DMSReplicationInstance","DMSLabInstance" ]
+    },
+    "LambdaDMSRole" : {
+      "Type" : "AWS::IAM::Role",
+      "Properties" : {
+        "AssumeRolePolicyDocument": {
+          "Version" : "2012-10-17",
+          "Statement" : [ {
+            "Effect" : "Allow",
+            "Principal" : {
+                "Service" : [ "dms.amazonaws.com", "lambda.amazonaws.com" ]
+            },
+            "Action" : [ "sts:AssumeRole" ]
+          } ]
+        },
+        "Path" : "/",
+        "Policies" : [ {
+          "PolicyName" : "LambdaDMSPolicy",
+          "PolicyDocument" : {
+            "Version" : "2012-10-17",
+            "Statement" : [ 
+              {
+                "Effect" : "Allow",
+                "Action" : [
+                  "s3:PutObject",
+                  "s3:DeleteObject",
+                  "cloudformation:DescribeChangeSet",
+                  "cloudformation:DescribeStackResources",
+                  "cloudformation:DescribeStacks",
+                  "cloudformation:GetTemplate",
+                  "cloudformation:ListStackResources",
+                  "cloudwatch:*",
+                  "cognito-identity:ListIdentityPools",
+                  "cognito-sync:GetCognitoEvents",
+                  "cognito-sync:SetCognitoEvents",
+                  "dms:*",
+                  "dynamodb:*",
+                  "ec2:DescribeSecurityGroups",
+                  "ec2:DescribeSubnets",
+                  "ec2:DescribeVpcs",
+                  "ec2:CreateNetworkInterface",
+                  "ec2:DescribeNetworkInterfaces",
+                  "ec2:DeleteNetworkInterface",
+                  "events:*",
+                  "iam:GetPolicy",
+                  "iam:GetPolicyVersion",
+                  "iam:GetRole",
+                  "iam:GetRolePolicy",
+                  "iam:ListAttachedRolePolicies",
+                  "iam:ListRolePolicies",
+                  "iam:ListRoles",
+                  "iam:PassRole",
+                  "lambda:*",
+                  "logs:*",
+                  "s3:*",
+                  "ssm:*",
+                  "tag:GetResources",
+                  "xray:PutTelemetryRecords",
+                  "xray:PutTraceSegments"
+                ],
+                "Resource" : "*"
+              }
+            ]
+          }
+        } ]
+      }
+    },
+      "LambdaDMSStartTask": {
+        "Type": "AWS::Lambda::Function",
+        "Properties":{
+          "Handler":"index.lambda_handler",
+          "Role": {"Fn::GetAtt": ["LambdaDMSRole", "Arn"]},
+          "Code": {
+            "ZipFile": { "Fn::Join": [
+              "\n",
+              [
+                "import json \n",
+                "import os\n",
+                "import boto3 \n", 
+                "client = boto3.client('dms') \n",
+                "taskARN = os.environ['replicationTaskARN']\n",
+                "def lambda_handler(event, context): \n",
+                "\tclient = boto3.client('dms') \n",
+                "\tdms_response = client.start_replication_task(ReplicationTaskArn=taskARN,StartReplicationTaskType= 'start-replication')\n",
+                "\treturn {'statusCode': 200}"
+              ]
+            ]
+          }
+          },
+          "Runtime": "python3.7",
+          "Environment": {"Variables": {"replicationTaskARN":{"Ref":"DMSReplicationTask"}}},
+          "Timeout":"60",
+          "TracingConfig": {
+            "Mode": "Active"
+          }
+        },
+        "DependsOn" : [ "DMSReplicationTask" ]
+      },
+    "GlueRole" : {
+      "Type" : "AWS::IAM::Role",
+      "Properties" : {
+        "RoleName":{"Fn::Join": ["",[{"Ref": "AWS::StackName"},"-glue-workshop-role"]]},
+        "AssumeRolePolicyDocument": {
+          "Version" : "2012-10-17",
+          "Statement" : [ {
+            "Effect" : "Allow",
+            "Principal" : {
+                "Service" : [ "glue.amazonaws.com" ]
+            },
+            "Action" : [ "sts:AssumeRole" ]
+          } ]
+        },
+        "Path" : "/",
+        "Policies" : [ {
+          "PolicyName" : {"Fn::Join": ["",[{"Ref": "AWS::StackName"},"-glue-workshop-policy"]]},
+          "PolicyDocument" : {
+            "Version" : "2012-10-17",
+            "Statement" : [ 
+              {
+                "Effect" : "Allow",
+                "Action" : [
+                  "s3:*",
+                  "glue:*",
+                  "ec2:DescribeSecurityGroups",
+                  "ec2:DescribeSubnets",
+                  "ec2:DescribeVpcs",
+                  "ec2:DescribeVpcEndpoints",
+                  "ec2:DescribeRouteTables",
+                  "ec2:DescribeVpcAttribute",
+                  "ec2:DescribeKeyPairs",
+                  "ec2:DescribeInstances",
+                  "ec2:DescribeImages",
+                  "iam:ListRoles",
+                  "iam:ListUsers",
+                  "iam:ListGroups",
+                  "iam:ListRolePolicies",
+                  "iam:GetRole",
+                  "iam:PassRole",
+                  "iam:GetRolePolicy",
+                  "iam:ListAttachedRolePolicies",
+                  "cloudwatch:GetMetricData",
+                  "cloudwatch:ListDashboards",
+                  "ecr:GetAuthorizationToken",
+                  "ecr:BatchCheckLayerAvailability",
+                  "ecr:GetDownloadUrlForLayer",
+                  "ecr:GetRepositoryPolicy",
+                  "ecr:DescribeRepositories",
+                  "ecr:ListImages",
+                  "ecr:DescribeImages",
+                  "ecr:BatchGetImage",
+                  "ecr:GetLifecyclePolicy",
+                  "ecr:GetLifecyclePolicyPreview",
+                  "ecr:ListTagsForResource",
+                  "ecr:DescribeImageScanFindings",
+                  "logs:CreateLogGroup",
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents",
+                  "logs:AssociateKmsKey",
+                  "cloudwatch:PutMetricData"
+                ],
+                "Resource" : "*"
+              }
+            ]
+          }
+        } ]
+      }
+    },
+      "SportsTicketsDatabase": {
+        "Type":"AWS::Glue::Database",
+        "Properties":{
+          "CatalogId":{"Ref":"AWS::AccountId"},
+          "DatabaseInput": {
+            "Name": "sports_tickets",
+            "Description":"Database to hold raw data from DMS",
+            "LocationUri": {"Fn::Join":["",["s3://",{"Ref":"S3Bucket"},"/dms_sample/"]]}
+          }
+        }
+      },
+      "SportsTicketsHudiDatabase": {
+        "Type":"AWS::Glue::Database",
+        "Properties":{
+          "CatalogId":{"Ref":"AWS::AccountId"},
+          "DatabaseInput": {
+            "Name": "sports_tickets_hudi",
+            "Description":"Database for Hudi Data Lake",
+            "LocationUri": {"Fn::Join":["",["s3://",{"Ref":"S3HudiBucket"},"/hudi/"]]}
+          }
+        }
+      },
+      "SportsTicketsCrawler": {
+        "Type": "AWS::Glue::Crawler",
+        "Properties": {
+          "Name":"sports-tickets-crawler",
+          "Role": { "Fn::GetAtt" : [ "GlueRole", "Arn" ] },
+          "DatabaseName":{"Ref": "SportsTicketsDatabase"},
+          "Targets": {
+            "S3Targets": [
+              {
+              "Path": {"Fn::Join":["",["s3://",{"Ref":"S3Bucket"},"/dms_sample/"]]}
+              }
+            ]
+          }
+        }
+      },
+      "MyAthenaWorkGroup":{
+        "Type":"AWS::Athena::WorkGroup",
+        "Properties":{
+            "Name":"HudiWorkshopWorkgroup",
+            "Description":"My WorkGroup",
+            "State":"ENABLED",
+            "RecursiveDeleteOption":"true",
+            "WorkGroupConfiguration":{
+                "EnforceWorkGroupConfiguration":true,
+                "PublishCloudWatchMetricsEnabled":false,
+                "RequesterPaysEnabled":true,
+                "ResultConfiguration":{
+                    "OutputLocation":{"Fn::Join":["",["s3://",{"Ref":"S3Bucket"},"/athena-results/"]]}
+                }
+            }
+        }
+    },
+    "SportingEventInfo": {
+      "Type": "AWS::Athena::NamedQuery",
+      "Properties": {
+        "Database":{"Ref": "SportsTicketsDatabase"},
+        "WorkGroup": { "Ref": "MyAthenaWorkGroup" },
+        "Description": "A test query",
+        "Name": "Sporting Event Info ",
+        "QueryString": {"Fn::Join": ["",[
+          "CREATE OR REPLACE VIEW sporting_event_ticket_info\n",
+          "AS\n",
+          "SELECT greatest(t.timestamp,e.timestamp,p.timestamp) as timestamp,\n",
+          "t.id AS ticket_id,e.event_id, e.sport, e.event_date_time, e.home_team, e.away_team, e.location, e.city,\n", 
+          "t.seat_level, t.seat_section, t.seat_row, t.seat, t.ticket_price, p.full_name AS ticketholder\n",
+          "FROM\n",
+          "SELECT e.id AS event_id, greatest(e.timestamp,h.timestamp,l.timestamp) as timestamp, e.sport_type_name AS sport, e.start_date_time AS event_date_time,\n",
+          "h.name AS home_team, a.name AS away_team, l.name AS location, l.city\n",
+          "FROM sporting_event e, sport_team h, sport_team a, sport_location l\n",
+          "WHERE e.home_team_id = h.id AND e.away_team_id = a.id AND e.location_id = l.id) e,\n",
+          "sporting_event_ticket t, person p WHERE t.sporting_event_id = e.event_id AND t.ticketholder_id = p.id;"
+        ]]}
+      }
+    },
+    "TicketUpdates": {
+      "Type": "AWS::Athena::NamedQuery",
+      "Properties": {
+        "Database":{"Ref": "SportsTicketsDatabase"},
+        "WorkGroup": { "Ref": "MyAthenaWorkGroup" },
+        "Description": "Number of transactions per ticket ID",
+        "Name": "Updates per ticket ID ",
+        "QueryString": {"Fn::Join": ["",[
+          "SELECT ticket_id, event_id, count(ticketholder)\n", 
+          "FROM sporting_event_ticket_info\n",
+          "GROUP BY ticket_id, event_id\n",
+          "HAVING COUNT( ticketholder ) > 1;"
+          ]]}
+      }
+    },
+    "SportingTicketUpdates": {
+      "Type": "AWS::Athena::NamedQuery",
+      "Properties": {
+        "Database":{"Ref": "SportsTicketsDatabase"},
+        "WorkGroup": { "Ref": "MyAthenaWorkGroup" },
+        "Description": "CDC from Database",
+        "Name": "Updates In Sports Tickets ",
+        "QueryString": {"Fn::Join": ["",[
+          "SELECT op, count(*)\n", 
+          "FROM sporting_event_ticket\n",
+          "GROUP BY op;\n"
+          ]]}
+      }
+    },
+    "SportingTicketDeletes": {
+      "Type": "AWS::Athena::NamedQuery",
+      "Properties": {
+        "Database":{"Ref": "SportsTicketsDatabase"},
+        "WorkGroup": { "Ref": "MyAthenaWorkGroup" },
+        "Description": "CDC from Database",
+        "Name": "Deletes per ticket ID",
+        "QueryString": {"Fn::Join": ["",[
+          "SELECT op, cast(cast(id as double) as int) as id\n", 
+          "FROM sporting_event_ticket\n",
+          "where op = 'D';\n"
+          ]]}
+      }
+    }
+},
+  "Outputs" : {
+    "StackName" : { "Value" : { "Ref" : "AWS::StackName" } },
+    "RegionName" : { "Value" : { "Ref" : "AWS::Region" } },
+    "S3BucketName" : { "Value" : { "Ref": "S3Bucket" } },
+    "AuroraEndpoint" : {
+      "Value" : { "Fn::GetAtt": [ "AuroraCluster", "Endpoint.Address" ] }
+    }
+  }
+}
