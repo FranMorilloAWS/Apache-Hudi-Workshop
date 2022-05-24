@@ -18,24 +18,20 @@
 
 - Lab 1: Exploring the Data
 
-  - [Start DMS Task](3-exploring-the-data/1-dms-task-cdc.md)
-  - [Run AWS Glue Crawler](3-exploring-the-data/2-glue-crawler.md)
-  - [Querying with Amazon Athena](3-exploring-the-data/3-amazon-athena.md)
+  - [DMS Task & Glue](3-exploring-the-data/1-dms-task-cdc.md)
+  - [Querying with Amazon Athena](3-exploring-the-data/2-amazon-athena.md)
 
 - Lab 2: Apache Hudi Fundamentals
   - [Create Hudi Table](4-apache-hudi-fundamentals/1-create-hudi-table.md)
   - [Updates in Apache Hudi](4-apache-hudi-fundamentals/2-updates-hudi.md)
   - [Deletes in Apache Hudi](4-apache-hudi-fundamentals/3-deletes-hudi.md)
 
-- Lab 3: Writing with Apache Hudi
-  - [Copy on Write](5-writing-apache-hudi/1-copy-on-write.md)
-  - [Merge on Read](5-writing-apache-hudi/2-merge-on-read.md)
-
-- Lab 4: Querying Apache Hudi
+- Lab 3: Querying Apache Hudi
   - [Snapshot Queries](6-querying-apache-hudi/1-snapshot.md)
   - [Incremental Queries](6-querying-apache-hudi/2-incremental.md)
   - [Time Travel Query](6-querying-apache-hudi/3-time-travel.md)
-- Lab 6: Advanced Apache Hudi Configurations
+  
+- Lab 4: Advanced Apache Hudi Configurations
   - [DMS Configuration](7-advanced-apache-hudi/1-dms-configuration.md)
   - [Cleaning](7-advanced-apache-hudi/2-cleaning.md)
   - [Clustering](7-advanced-apache-hudi/3-clustering.md)
