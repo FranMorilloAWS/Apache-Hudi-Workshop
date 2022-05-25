@@ -42,23 +42,3 @@ Here we will be using the Glue Crawler to be able to query the data with Amazon 
 You should see that 15 tables have been added to the Glue Data Catalog.
 
 These are the tables that we are currently replicating from Aurora into Amazon S3
-
-## 3. Explore the data with Amazon Athena
-
-Amazon Athena is an interactive query service that makes it easy to analyze data in Amazon S3 using standard SQL. Athena is serverless, so there is no infrastructure to manage, and you pay only for the queries that you run.
-
-1. Go to the [Amazon Athena Console](https://console.aws.amazon.com/athena/)
-2. On the top left select **Workgroup** and select the *HudiWorkshopWorkgroup*
-![athena 1](img/athena-1.png)
-
-3. Click Acknowledge
-4. Click on the  **Saved queries** tab, and execute the *Updates In Sports Tickets*
-
-
-
-* Follow [this deep link to create an IAM role with Administrator access](https://console.aws.amazon.com/iam/home#/roles$new?step=review&commonUseCase=EC2%2BEC2&selectedUseCase=EC2&policies=arn:aws:iam::aws:policy%2FAdministratorAccess)
-* Confirm that AWS service and EC2 are selected, then click Next to view permissions.
-* Confirm that AdministratorAccess is checked, then click Next to Tags.
-* Just click Next to review.
-* Enter mskworkshop-admin for the Name, and select Create Role
-

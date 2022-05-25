@@ -22,17 +22,10 @@
   - [Querying with Amazon Athena](3-exploring-the-data/2-amazon-athena.md)
 
 - Lab 2: Apache Hudi Fundamentals
-  - [Create Hudi Table](4-apache-hudi-fundamentals/1-create-hudi-table.md)
-  - [Updates in Apache Hudi](4-apache-hudi-fundamentals/2-updates-hudi.md)
-  - [Deletes in Apache Hudi](4-apache-hudi-fundamentals/3-deletes-hudi.md)
+  - [Insert, Updates & Deletes](4-apache-hudi-fundamentals/1-create-hudi-table.md)
 
 - Lab 3: Querying Apache Hudi
-  - [Snapshot Queries](6-querying-apache-hudi/1-snapshot.md)
-  - [Incremental Queries](6-querying-apache-hudi/2-incremental.md)
-  - [Time Travel Query](6-querying-apache-hudi/3-time-travel.md)
-  
-- Lab 4: Advanced Apache Hudi Configurations
-  - [DMS Configuration](7-advanced-apache-hudi/1-dms-configuration.md)
-  - [Cleaning](7-advanced-apache-hudi/2-cleaning.md)
-  - [Clustering](7-advanced-apache-hudi/3-clustering.md)
-  - [File Sizing](7-advanced-apache-hudi/4-file-sizing.md)
+  - [Hudi Queries](6-querying-apache-hudi/1-queries.md)
+
+- Lab 4: Merge on Read Table
+  - [Storage Types](7-table-types/cow.md)
