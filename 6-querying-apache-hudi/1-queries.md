@@ -6,11 +6,10 @@ We will be using the same notebook, so we do not have to configure the Glue Inte
 
 ## 1. Snapshot Query
 
-Replace the Bucket Name
 ```
 snapshotQueryDF = spark.read \
     .format('org.apache.hudi') \
-    .load('s3://EXAMPLE-BUCKET/hudi/hudi-tickets/)
+    .load(path)
     
 snapshotQueryDF.show()
 ```
@@ -32,7 +31,7 @@ readOptions = {
 incQueryDF = spark.read \
     .format('org.apache.hudi') \
     .options(**readOptions) \
-    .load('s3://EXAMPLE-BUCKET/hudi/hudi-tickets/)
+    .load(path)
 
 incQueryDF.show()
 ```
@@ -43,8 +42,15 @@ We can specify a moment in time and retrieve how our table looked in that specif
 
 ```
 timeTravelQueryDF = spark.read \
-  .format("hudi"). \
-  .option("as.of.instant", "2022-05-10"). \
-  .load('s3://EXAMPLE-BUCKET/hudi/hudi-tickets/)
+  .format("org.apache.hudi") \
+  .option("as.of.instant", "20220526095454") \
+  .load(path)
+
+timeTravelQueryDF.show()
 ```
 
+Lets confirm that there have not been any updates to this table.
+
+```
+timeTravelQueryDF.filter(timeTravelQueryDF.op=='U').count()
+```

@@ -197,6 +197,13 @@ updatesDF.write.format("org.apache.hudi").options(**UpdatesConf).mode("append").
 
 5. Lets verify that we actually did the update. 
 
+> [!WARNING]
+> We need to refresh the Spark Catalog so it updates the Metadata of the Table so we can work with the latest version of the Hudi Table.
+
+```
+spark.catalog.refreshTable("hudi_tickets")
+```
+
 We are going to use the same ticket ID we worked in the Exploring the Data Lab
 
 *ID = 1.45250511E8*
@@ -237,7 +244,7 @@ We are modifiying the **hoodie.datasource.write.operation** to *delete*
 DeletesConf = {**hudiDeleteConfig, **glueConfig, **unpartitionDataConfig}
 ```
 
-4. before doing the delete lets verify that in the Hudi Table we have one of the ticket IDs
+4. Before doing the delete lets verify that in the Hudi Table we have one of the ticket IDs
 
 ```
 id = deletesDF.select('id').show(1)
@@ -254,6 +261,12 @@ deletesDF.write.format("org.apache.hudi").options(**DeletesConf).mode("append").
 ```
 
 5. Lets verify that we actually did the deletes. 
+
+Remember we need to refresh the Catalog in the Interactive Session
+
+```
+spark.catalog.refreshTable("hudi_tickets")
+```
 
 ```
 hudi_tickets = spark.sql("select * from hudi_tickets")

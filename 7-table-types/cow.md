@@ -42,6 +42,7 @@ morPath = 's3://hudi-workshop-s3hudibucket-4o8b53fyh2sx/hudi/hudi-tickets-mor/'
 hudiMorConfig = {'className' : 'org.apache.hudi', 
                 'hoodie.datasource.hive_sync.use_jdbc':'false',  
                 'hoodie.datasource.write.recordkey.field': 'id', 
+                'hoodie.datasource.write.table.type':'MERGE_ON_READ',
                 'hoodie.datasource.write.precombine.field': 'timestamp', 
                 'hoodie.table.name': 'hudi_tickets_mor', 
                 'hoodie.datasource.write.operation': 'bulk_insert'}
@@ -75,6 +76,7 @@ hudiUpdatesMorConfig = {'className' : 'org.apache.hudi',
                 'hoodie.datasource.write.recordkey.field': 'id', 
                 'hoodie.datasource.write.precombine.field': 'timestamp', 
                 'hoodie.table.name': 'hudi_tickets_mor', 
+                'hoodie.datasource.write.table.type':'MERGE_ON_READ',
                 'hoodie.datasource.write.operation': 'upsert'}
 ```
 
@@ -107,6 +109,9 @@ spark.sql("select * from hudi_tickets_mor_ro").show()
 ```
 spark.sql("select * from hudi_tickets_mor_rt").show()
 ```
+
+> [!WARNING]
+> Using Glue Marketplace connector for Hudi we cant do Snapshot Queries. However we can do the query using Amazon Athena
 
 If we compare the Snapshot Query took a little bit longer to process, because it is compacting the latest compacted data with the Delta Commits. 
 
